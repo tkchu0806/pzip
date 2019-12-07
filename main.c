@@ -4,11 +4,11 @@
  *
  * Group No.: 10 (Join a project group in Canvas)
  *
- * First member's full name: CHU Tsz Kit
+ * First member's full name: CHU Tsz Kit Chronos
  * First member's email address: tkchu5-c@my.cityu.edu.hk
  *
- * Second member's full name: (leave blank if none)
- * Second member's email address: (leave blank if none)
+ * Second member's full name: Ng Chak Lam Rica
+ * Second member's email address:
  *
  * Third member's full name: (leave blank if none)
  * Third member's email address: (leave blank if none)
@@ -24,15 +24,16 @@
 #include <unistd.h>
 // #include <sys/sysinfo.h>
 
-void *pzip_thread(int argc, char** argv) {
+FILE *temp_file;
+char last_char = '\0';
+char this_char;
+int count = 1;
+int file_number;
 
-    FILE *temp_file;
-    char last_char = '\0';
-    char this_char;
-    int count = 1;
+void *pzip_thread(char** argv) {
 
     // for all input files
-    for (int i=0; i < (argc-1); i++) {
+    for (int i=0; i < (file_number-1); i++) {
         // open and read one of the input files
         temp_file = fopen(argv[i+1], "r");
 
@@ -75,7 +76,6 @@ void *pzip_thread(int argc, char** argv) {
 }
 
 
-
 int main(int argc, char** argv)
 {
     // argc 0 = the program name itself
@@ -87,11 +87,12 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    file_number = argc;
+
     pthread_t t1, t2;
     printf("pzip: begin\n");
-    // unable to input more than 1 arg into pzip_thread
-    pthread_create(&t1, NULL, pzip_thread, argc, argv);
-    pthread_create(&t2, NULL, pzip_thread, argc, argv);
+    pthread_create(&t1, NULL, pzip_thread, argv);
+    pthread_create(&t2, NULL, pzip_thread, argv);
 
     // join waits for the threads to finish
     pthread_join(t1, NULL);
