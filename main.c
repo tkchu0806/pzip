@@ -22,7 +22,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <sys/sysinfo.h>
+// #include <sys/sysinfo.h>
 
 FILE *temp_file;
 char last_char = '\0';
@@ -87,8 +87,8 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    printf("This system has %d processors configured and " "%d processors available.\n",
-           get_nprocs_conf(), get_nprocs());
+//    printf("This system has %d processors configured and " "%d processors available.\n",
+//           get_nprocs_conf(), get_nprocs());
 
     // Parent thread is the producer to divide the big files into several small parts.
     printf("pzip_parent_thread: begin\n");
