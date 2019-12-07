@@ -8,7 +8,7 @@
  * First member's email address: tkchu5-c@my.cityu.edu.hk
  *
  * Second member's full name: Ng Chak Lam Rica
- * Second member's email address:
+ * Second member's email address: clrng2-c@my.cityu.edu.hk
  *
  * Third member's full name: (leave blank if none)
  * Third member's email address: (leave blank if none)
