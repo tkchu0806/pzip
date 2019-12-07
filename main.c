@@ -22,20 +22,21 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
-// #include <sys/sysinfo.h>
+#include <sys/sysinfo.h>
 
 FILE *temp_file;
 char last_char = '\0';
 char this_char;
 int count = 1;
-int file_number;
+int total_file_number;
+char **temp_file_name;
 
-void *pzip_thread(char** argv) {
+void *czip_child_thread(char **argv) {
 
     // for all input files
-    for (int i=0; i < (file_number-1); i++) {
+    for (int i = 0; i < (total_file_number - 1); i++) {
         // open and read one of the input files
-        temp_file = fopen(argv[i+1], "r");
+        temp_file = fopen(argv[i + 1], "r");
 
         // test if there is no more new file
         if (temp_file == NULL)
@@ -45,7 +46,7 @@ void *pzip_thread(char** argv) {
         fread(&this_char, sizeof(char), 1, temp_file);
 
         // while it is not the end of the file
-        while(!feof(temp_file)) {
+        while (!feof(temp_file)) {
             // add up to count the number of the same character
             if (last_char == this_char)
                 count++;
@@ -76,28 +77,34 @@ void *pzip_thread(char** argv) {
 }
 
 
-int main(int argc, char** argv)
-{
+int main(int argc, char **argv) {
     // argc 0 = the program name itself
     // argc 1 = the space next to the command line
     // argc 2 = file1
     // argc 3 = file2 ...
-    if (argc<2) {
+    if (argc < 2) {
         printf("czip: file1 [file2 ...]\n");
         return 1;
     }
 
-    file_number = argc;
+    printf("This system has %d processors configured and " "%d processors available.\n",
+           get_nprocs_conf(), get_nprocs());
 
-    pthread_t t1, t2;
-    printf("pzip: begin\n");
-    pthread_create(&t1, NULL, pzip_thread, argv);
-    pthread_create(&t2, NULL, pzip_thread, argv);
+    // Parent thread is the producer to divide the big files into several small parts.
+    printf("pzip_parent_thread: begin\n");
 
-    // join waits for the threads to finish
-    pthread_join(t1, NULL);
-    pthread_join(t2, NULL);
-    printf("pzip: end\n");
+    total_file_number = argc;
+    temp_file_name = argv;
+
+    // Child threads are the consumers to czip a part of large files divided by the parent thread in advance.
+    pthread_t child_t1, child_t2;
+    pthread_create(&child_t1, NULL, czip_child_thread, temp_file_name); //Create child thread t1
+    pthread_create(&child_t2, NULL, czip_child_thread, temp_file_name); //Create child thread t2
+
+    // join waits for the child threads to finish
+    pthread_join(child_t1, NULL);
+    pthread_join(child_t2, NULL);
+    printf("pzip_parent_thread: end\n");
 
     return 0;
 }
