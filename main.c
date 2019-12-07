@@ -22,6 +22,8 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+// This library is ignored as this header file is not found in MacOS environment.
 // #include <sys/sysinfo.h>
 
 FILE *temp_file;
@@ -31,6 +33,7 @@ int count = 1;
 int total_file_number;
 char **temp_file_name;
 
+//TODO: 1. Use mmap() function to replace fwrite(), fread(), etc.
 void *czip_child_thread(char **argv) {
 
     // for all input files
@@ -87,8 +90,16 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-//    printf("This system has %d processors configured and " "%d processors available.\n",
-//           get_nprocs_conf(), get_nprocs());
+    // This part is used to find out the number of configured and available processors to determine
+    // the maximum number of threads that can be created.
+
+    // printf("This system has %d processors configured and " "%d processors available.\n",
+    //         get_nprocs_conf(), get_nprocs());
+
+    // However, since this is just a trivial problem, and only 2 threads are enough to complete this project,
+    // this part is archived. The focus should be on
+    //                        1. mmap() function
+    //                        2. mutex lock problem (where is the critical section?)
 
     // Parent thread is the producer to divide the big files into several small parts.
     printf("pzip_parent_thread: begin\n");
@@ -97,6 +108,7 @@ int main(int argc, char **argv) {
     temp_file_name = argv;
 
     // Child threads are the consumers to czip a part of large files divided by the parent thread in advance.
+    //TODO: 2. Solve mutex lock problem (where is the critical section?)
     pthread_t child_t1, child_t2;
     pthread_create(&child_t1, NULL, czip_child_thread, temp_file_name); //Create child thread t1
     pthread_create(&child_t2, NULL, czip_child_thread, temp_file_name); //Create child thread t2
