@@ -38,6 +38,10 @@ struct buffer_for_file {
     int part_size;
 };
 
+struct buffer_temp_output {
+    char temp_output;
+};
+
 // =====================================================================================================================
 
 //TODO: 1. Use mmap() function to replace fwrite(), fread(), etc.
