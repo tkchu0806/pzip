@@ -22,6 +22,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <assert.h>
 
 // This library is ignored as this header file is not found in MacOS environment.
 // #include <sys/sysinfo.h>
@@ -39,19 +40,23 @@ struct buffer_for_file {
 };
 
 struct buffer_temp_output {
-    char temp_output;
+    int temp_count;
+    char temp_char;
 };
+
+struct buffer_temp_output buffer_temp_output_array[];
 
 // =====================================================================================================================
 
-//TODO: 1. Use mmap() function to replace fwrite(), fread(), etc.
-void *czip_child_thread(char *temp_part_file_address) {
+void *czip_child_thread(struct buffer_for_file temp_part_file) {
 
-    // read the first character
-    fread(&this_char, sizeof(char), 1, temp_part_file);
+    struct buffer_temp_output temp_output;
+    struct buffer_temp_output local_temp_output_array[temp_part_file.part_size];
+    int array_pointer = 0;
 
-    // while it is not the end of the file
-    while (!feof(temp_part_file)) {
+    // scan for the entire temp_part_file
+    for (int j = 0; j < temp_part_file.part_size; j++) {
+        this_char = temp_part_file.address[j];
         // add up to count the number of the same character
         if (last_char == this_char)
             count++;
@@ -62,20 +67,18 @@ void *czip_child_thread(char *temp_part_file_address) {
                 // write and save the number of count
                 // write and save the corresponding character
                 // printf("%d%c", count, last_char);
-                fwrite(&count, sizeof(int), 1, stdout);
-                fwrite(&last_char, sizeof(char), 1, stdout);
+                temp_output.temp_count = count;
+                temp_output.temp_char = last_char;
+                local_temp_output_array[array_pointer++] = temp_output;
                 count = 1;
             }
             last_char = this_char;
         }
-        // read the next character
-        fread(&this_char, sizeof(char), 1, temp_part_file);
     }
 
-    // Ensure everything is printed and saved
-    // printf("%d%c", count, last_char);
-    fwrite(&count, sizeof(int), 1, stdout);
-    fwrite(&last_char, sizeof(char), 1, stdout);
+    for (int n = 0; n < sizeof(local_temp_output_array); n++) {
+        buffer_temp_output_array[n] = local_temp_output_array[n];
+    }
 }
 
 // =====================================================================================================================
@@ -89,8 +92,8 @@ size_t getFileSize (const char* filename) {
 // =====================================================================================================================
 
 void print_for_testing(struct buffer_for_file temp_buffer) {
-    for (int j = 0; j < temp_buffer.part_size; j++) {
-        printf("%c", temp_buffer.address[j]);
+    for (int k = 0; k < temp_buffer.part_size; k++) {
+        printf("%c", temp_buffer.address[k]);
     }
     printf("\n<this part end>\n");
 }
@@ -134,6 +137,8 @@ int main(int argc, char **argv) {
     for (int i = 0; i < (total_file_number - 1); i++) {
         // open and read one of the input files
         temp_file = open(temp_file_name[i + 1], O_RDONLY, 0);
+        // Check if the input file is successfully opened and read
+        assert(temp_file != -1);
 
         // test if there is no more new file
         if (temp_file == NULL)
@@ -144,6 +149,8 @@ int main(int argc, char **argv) {
 
         // Access the data mapped in the address space by using the pointer returned from the mmap() function
         char *pointer_to_temp_file = (char *) mmap(0, size_temp_file, PROT_READ, MAP_SHARED, temp_file, 0);
+        // Check if the data is successfully mapped
+        assert(pointer_to_temp_file != MAP_FAILED);
 
         // Obtain the 1st part of the input file
         struct buffer_for_file part_1_temp_file;
@@ -156,20 +163,36 @@ int main(int argc, char **argv) {
         part_2_temp_file.part_size = size_temp_file - size_temp_file / 2;
 
         // print each part of the input file for testing
-        // print_for_testing(part_1_temp_file);
-        // print_for_testing(part_2_temp_file);
+        print_for_testing(part_1_temp_file);
+        print_for_testing(part_2_temp_file);
 
+        // Testing for single thread
+        czip_child_thread(part_1_temp_file);
+        czip_child_thread(part_2_temp_file);
 
         // Child threads are the consumers to czip a part of large files divided by the parent thread in advance.
         //TODO: 2. Solve mutex lock problem (where is the critical section?)
-        pthread_t child_t1, child_t2;
-        pthread_create(&child_t1, NULL, czip_child_thread, part_1_temp_file.address); //Create child thread t1
-        pthread_create(&child_t2, NULL, czip_child_thread, part_2_temp_file.address); //Create child thread t2
+//        pthread_t child_t1, child_t2;
+//        pthread_create(&child_t1, NULL, czip_child_thread, part_1_temp_file.address); //Create child thread t1
+//        pthread_create(&child_t2, NULL, czip_child_thread, part_2_temp_file.address); //Create child thread t2
 
         // join waits for the child threads to finish
-        pthread_join(child_t1, NULL);
-        pthread_join(child_t2, NULL);
-        printf("pzip_parent_thread: end\n");
+//        pthread_join(child_t1, NULL);
+//        pthread_join(child_t2, NULL);
+//        printf("pzip_parent_thread: end\n");
+
+
+        // Print all count and char
+        for (int m = 0; m < sizeof(buffer_temp_output_array); m++) {
+            // printf("%d%c", temp_output_array[l].temp_count, temp_output_array[l].temp_char);
+            fwrite(&buffer_temp_output_array[m].temp_count, sizeof(int), 1, stdout);
+            fwrite(&buffer_temp_output_array[m].temp_char, sizeof(char), 1, stdout);
+        }
+
+        // Cleanup and unmap
+        int rc = munmap(pointer_to_temp_file, size_temp_file);
+        // Check if it's successfully unmapped to clean up
+        assert(rc == 0);
 
         // Complete reading the temp_file and close it
         close(temp_file);
