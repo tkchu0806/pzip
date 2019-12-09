@@ -39,19 +39,17 @@ struct buffer_temp_output {
     char temp_char;
 };
 
-struct buffer_final_output {
+struct buffer_child_output {
     struct buffer_temp_output buffer_temp_output_array[BUFFER_SIZE];
     int buffer_array_length;
 };
-
-struct buffer_final_output final_output;
 
 // =====================================================================================================================
 
 void *czip_child_thread(void *arg) {
 
     struct buffer_temp_output temp_output;
-    struct buffer_final_output *local_final_output = NULL;
+    struct buffer_child_output *local_final_output = NULL;
     struct buffer_for_file *temp_part_file = (struct buffer_for_file *) arg;
     int array_length = 0;
     char last_char = '\0';
@@ -62,7 +60,7 @@ void *czip_child_thread(void *arg) {
     // Allocate a space to save the local_final_output
     // such that the result will not disappear after the end of this function.
     while (local_final_output == NULL) {
-        local_final_output = malloc(sizeof(struct buffer_final_output));
+        local_final_output = malloc(sizeof(struct buffer_child_output));
     }
 
     // scan for the entire temp_part_file
@@ -110,19 +108,14 @@ int main(int argc, char **argv) {
 
     // -----------------------------------------------------------------------------------------------------------------
 
-    // This part is used to find out the number of configured and available processors
-    // to determine the maximum number of threads that can be created.
-//     printf("This system has %d processors configured and " "%d processors available.\n", get_nprocs_conf(), get_nprocs());
-
-    // -----------------------------------------------------------------------------------------------------------------
-
     // Parent thread is the producer to divide the big files into several small parts.
 
     int total_file_number = argc;
     char **temp_file_name = argv;
 
-    struct buffer_final_output *temp_child_pointer_array[2];
+    struct buffer_child_output *temp_child_pointer_array[2];
     struct buffer_temp_output global_temp_output_array[BUFFER_SIZE];
+    int global_temp_output_array_length = 0;
 
     // for all input files
     for (int i = 0; i < (total_file_number - 1); i++) {
@@ -151,13 +144,8 @@ int main(int argc, char **argv) {
         part_2_temp_file.address = pointer_to_temp_file + size_temp_file / 2;
         part_2_temp_file.part_size = size_temp_file - size_temp_file / 2;
 
-        // Testing for single thread
-//        struct buffer_for_file entire_temp_file;
-//        entire_temp_file.address = pointer_to_temp_file;
-//        entire_temp_file.part_size = size_temp_file;
-//        czip_child_thread(&entire_temp_file);
-
         // Child threads are the consumers to czip a part of large files divided by the parent thread in advance.
+
         // 2 child threads work simultaneously to czip their parts
         // Mutex Lock is not needed as they work on 2 different parts of 1 single large file, and
         // they will save their results in separate locations concurrently. No deadlock will happen.
@@ -178,50 +166,53 @@ int main(int argc, char **argv) {
         // Complete reading the temp_file and close it
         close(temp_file);
 
+        // -------------------------------------------------------------------------------------------------------------
+
         //combine results from 2 child threads before reading the next file
-        int child_buffer_array_length =
-                temp_child_pointer_array[0]->buffer_array_length + temp_child_pointer_array[1]->buffer_array_length;
 
-        int temp_child_count = 0;
-        int temp_child_char = '\0';
+        // Save the results returned from the 1st child thread first
+        for (int n = 0; n < temp_child_pointer_array[0]->buffer_array_length; n++) {
+            global_temp_output_array[n] = temp_child_pointer_array[0]->buffer_temp_output_array[n];
+            global_temp_output_array_length++;
+        }
 
-        for (int n = 0; n < child_buffer_array_length; n++) {
-            global_temp_output_array[n] = temp_child_pointer_array[0]->buffer_temp_output_array;
+        // Prepare to save the results returned from the 2nd child thread
+        int array_starting_location = temp_child_pointer_array[0]->buffer_array_length;
 
+        // If the last character from the 1st child thread result is
+        // the same as the first character from the 2nd child thread result,
+        // combine their count
+        if (global_temp_output_array[array_starting_location - 1].temp_char ==
+            temp_child_pointer_array[1]->buffer_temp_output_array[0].temp_char) {
+            global_temp_output_array[array_starting_location - 1].temp_count +=
+                    temp_child_pointer_array[1]->buffer_temp_output_array[0].temp_count;
+        }
 
+        // Save the results returned from the 2nd child thread
+        for (int p = 0; p < temp_child_pointer_array[1]->buffer_array_length; p++) {
+            global_temp_output_array[array_starting_location + p] =
+                    temp_child_pointer_array[1]->buffer_temp_output_array[p + 1];
+            global_temp_output_array_length++;
         }
     }
 
     // -----------------------------------------------------------------------------------------------------------------
 
     // Finally, print all count and char from the final_output
+    // for all count and char results from the global_temp_output_array
+    for (int m = 0; m < global_temp_output_array_length; m++) {
 
-    int temp_final_count = 0;
-    char temp_final_char = '\0';
-
-    // for all count and char results from the final_output
-    for (int m = 0; m < final_output.global_array_length; m++) {
-        temp_final_char = global_temp_output_array[m].temp_char;
-
-        // check if it is the last element of the array
-        if (m == final_output.global_array_length - 1) {
-            // write the last element
-            fwrite(&temp_final_count, sizeof(int), 1, stdout);
-            fwrite(&temp_final_char, sizeof(char), 1, stdout);
-            break;
-        }
-
-        // if the current character is the same as the next character
-        if (temp_final_char == global_temp_output_array[m + 1].temp_char) {
-            temp_final_count = global_temp_output_array[m].temp_count + global_temp_output_array[m + 1].temp_count;
-            continue;
-        } else {
-            temp_final_count = global_temp_output_array[m].temp_count;
-        }
+//        // check if it is the last element of the array
+//        if (m == global_temp_output_array_length - 1) {
+//            // write the last element
+//            fwrite(&(global_temp_output_array[m].temp_count), sizeof(int), 1, stdout);
+//            fwrite(&(global_temp_output_array[m].temp_char), sizeof(char), 1, stdout);
+//            break;
+//        }
 
         // write the current character
-        fwrite(&temp_final_count, sizeof(int), 1, stdout);
-        fwrite(&temp_final_char, sizeof(char), 1, stdout);
+        fwrite(&(global_temp_output_array[m].temp_count), sizeof(int), 1, stdout);
+        fwrite(&(global_temp_output_array[m].temp_char), sizeof(char), 1, stdout);
     }
 
     return 0;
