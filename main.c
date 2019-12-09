@@ -158,12 +158,14 @@ int main(int argc, char **argv) {
 //        czip_child_thread(&entire_temp_file);
 
         // Child threads are the consumers to czip a part of large files divided by the parent thread in advance.
-        // 2 child threads work simultaneously to czip their parts,
+        // 2 child threads work simultaneously to czip their parts
+        // Mutex Lock is not needed as they work on 2 different parts of 1 single large file, and
+        // they will save their results in separate locations concurrently. No deadlock will happen.
         pthread_t child_t1, child_t2;
         pthread_create(&child_t1, NULL, czip_child_thread, &part_1_temp_file); //Create child thread t1, start czip
         pthread_create(&child_t2, NULL, czip_child_thread, &part_2_temp_file); //Create child thread t2, start czip
 
-        // 2 child threads save their results in temp_child_pointer_array[] respectively
+        // 2 child threads save their results in temp_child_pointer_array[] concurrently and respectively
         // join waits for the child threads to finish
         pthread_join(child_t1, (void **) &(temp_child_pointer_array[0]));
         pthread_join(child_t2, (void **) &(temp_child_pointer_array[1]));
