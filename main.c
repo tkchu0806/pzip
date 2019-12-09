@@ -48,16 +48,9 @@ struct buffer_final_output final_output;
 
 // =====================================================================================================================
 
-void *pzip_parent_thread(void *arg) {
-
-}
-
-// =====================================================================================================================
-
 void *czip_child_thread(void *arg) {
 
     struct buffer_temp_output temp_output;
-    // struct buffer_temp_output local_temp_output_array[BUFFER_SIZE / 2];
     struct buffer_final_output *local_final_output = NULL;
     struct buffer_for_file *temp_part_file = (struct buffer_for_file *) arg;
     int array_length = 0;
@@ -87,7 +80,6 @@ void *czip_child_thread(void *arg) {
                 // printf("%d%c", count, last_char);
                 temp_output.temp_count = count;
                 temp_output.temp_char = last_char;
-                // local_temp_output_array[array_length++] = temp_output;
                 local_final_output->buffer_temp_output_array[array_length++] = temp_output;
                 count = 1;
             }
@@ -98,13 +90,7 @@ void *czip_child_thread(void *arg) {
     // Ensure everything is saved
     temp_output.temp_count = count;
     temp_output.temp_char = last_char;
-    // local_temp_output_array[array_length++] = temp_output;
     local_final_output->buffer_temp_output_array[array_length++] = temp_output;
-
-//    for (int n = 0; n < array_length; n++) {
-//        global_temp_output_array[n] = local_temp_output_array[n];
-//    }
-
     local_final_output->buffer_array_length = array_length;
 
     return local_final_output;
@@ -124,11 +110,9 @@ int main(int argc, char **argv) {
 
     // -----------------------------------------------------------------------------------------------------------------
 
-    // This part is used to find out the number of configured and available processors to determine
-    // the maximum number of threads that can be created.
-
-    // printf("This system has %d processors configured and " "%d processors available.\n",
-    //         get_nprocs_conf(), get_nprocs());
+    // This part is used to find out the number of configured and available processors
+    // to determine the maximum number of threads that can be created.
+//     printf("This system has %d processors configured and " "%d processors available.\n", get_nprocs_conf(), get_nprocs());
 
     // -----------------------------------------------------------------------------------------------------------------
 
@@ -138,7 +122,7 @@ int main(int argc, char **argv) {
     char **temp_file_name = argv;
 
     struct buffer_final_output *temp_child_pointer_array[2];
-    struct buffer_temp_output *global_temp_output_array[BUFFER_SIZE];
+    struct buffer_temp_output global_temp_output_array[BUFFER_SIZE];
 
     // for all input files
     for (int i = 0; i < (total_file_number - 1); i++) {
@@ -174,25 +158,25 @@ int main(int argc, char **argv) {
 //        czip_child_thread(&entire_temp_file);
 
         // Child threads are the consumers to czip a part of large files divided by the parent thread in advance.
-
+        // 2 child threads work simultaneously to czip their parts,
         pthread_t child_t1, child_t2;
-        pthread_create(&child_t1, NULL, czip_child_thread, &part_1_temp_file); //Create child thread t1
-        pthread_create(&child_t2, NULL, czip_child_thread, &part_2_temp_file); //Create child thread t2
+        pthread_create(&child_t1, NULL, czip_child_thread, &part_1_temp_file); //Create child thread t1, start czip
+        pthread_create(&child_t2, NULL, czip_child_thread, &part_2_temp_file); //Create child thread t2, start czip
 
+        // 2 child threads save their results in temp_child_pointer_array[] respectively
         // join waits for the child threads to finish
-        pthread_join(child_t1, &(temp_child_pointer_array[0]));
-        pthread_join(child_t2, &(temp_child_pointer_array[1]));
+        pthread_join(child_t1, (void **) &(temp_child_pointer_array[0]));
+        pthread_join(child_t2, (void **) &(temp_child_pointer_array[1]));
 
         // Cleanup and unmap
-        // int rc = munmap(pointer_to_temp_file, size_temp_file);
+//      int rc = munmap(pointer_to_temp_file, size_temp_file);
         // Check if it's successfully unmapped to clean up
-        // assert(rc == 0);
+//      assert(rc == 0);
 
         // Complete reading the temp_file and close it
         close(temp_file);
 
-        //combine results from 2 child threads
-        temp_child_pointer_array[0]->buffer_temp_output_array;
+        //combine results from 2 child threads before reading the next file
         int child_buffer_array_length =
                 temp_child_pointer_array[0]->buffer_array_length + temp_child_pointer_array[1]->buffer_array_length;
 
@@ -200,17 +184,20 @@ int main(int argc, char **argv) {
         int temp_child_char = '\0';
 
         for (int n = 0; n < child_buffer_array_length; n++) {
-            temp_child_char = 
             global_temp_output_array[n] = temp_child_pointer_array[0]->buffer_temp_output_array;
+
+
         }
     }
 
     // -----------------------------------------------------------------------------------------------------------------
 
+    // Finally, print all count and char from the final_output
+
     int temp_final_count = 0;
     char temp_final_char = '\0';
 
-    // Print all count and char
+    // for all count and char results from the final_output
     for (int m = 0; m < final_output.global_array_length; m++) {
         temp_final_char = global_temp_output_array[m].temp_char;
 
