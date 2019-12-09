@@ -2,7 +2,7 @@
  * NOTE TO STUDENTS: Before you do anything else, please
  * provide your group information here.
  *
- * Group No.: 10 (Join a project group in Canvas)
+ * Group No.: 26 (Join a project group in Canvas)
  *
  * First member's full name: CHU Tsz Kit Chronos
  * First member's email address: tkchu5-c@my.cityu.edu.hk
