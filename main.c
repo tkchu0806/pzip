@@ -35,13 +35,13 @@ struct buffer_for_file {
 };
 
 struct buffer_output {
-    int buffer_count;
-    char buffer_char;
+    int count;
+    char byte;
 };
 
 struct buffer_child_output {
-    struct buffer_output buffer_child_output_array[BUFFER_SIZE];
-    int buffer_child_array_length;
+    struct buffer_output buffer[BUFFER_SIZE];
+    int length;
 };
 
 // =====================================================================================================================
@@ -63,9 +63,10 @@ void *czip_child_thread(void *arg) {
         local_child_final_output = malloc(sizeof(struct buffer_child_output));
     }
 
+    this_char = temp_part_file->address[0];
+
     // scan for the entire temp_part_file
-    for (int j = 0; j < temp_part_file->part_size; j++) {
-        this_char = temp_part_file->address[j];
+    for (int j = 1; j < temp_part_file->part_size; j++) {
         // add up to count the number of the same character
         if (last_char == this_char)
             count++;
@@ -76,20 +77,25 @@ void *czip_child_thread(void *arg) {
                 // write and save the number of count
                 // write and save the corresponding character
                 // printf("%d%c", count, last_char);
-                temp_output.buffer_count = count;
-                temp_output.buffer_char = last_char;
-                local_child_final_output->buffer_child_output_array[array_length++] = temp_output;
+                temp_output.count = count;
+                temp_output.byte = last_char;
+                local_child_final_output->buffer[array_length++] = temp_output;
                 count = 1;
             }
             last_char = this_char;
         }
+        this_char = temp_part_file->address[j];
+    }
+
+    if (last_char == this_char) {
+        count++;
     }
 
     // Ensure everything is saved
-    temp_output.buffer_count = count;
-    temp_output.buffer_char = last_char;
-    local_child_final_output->buffer_child_output_array[array_length++] = temp_output;
-    local_child_final_output->buffer_child_array_length = array_length;
+    temp_output.count = count;
+    temp_output.byte = last_char;
+    local_child_final_output->buffer[array_length++] = temp_output;
+    local_child_final_output->length = array_length;
 
     return local_child_final_output;
 }
@@ -113,16 +119,18 @@ int main(int argc, char **argv) {
     int total_file_number = argc;
     char **temp_file_name = argv;
 
-    struct buffer_child_output *temp_child_pointer_array[2];
-    struct buffer_output global_temp_output_array[BUFFER_SIZE];
-    int global_temp_output_array_length = 0;
+    struct buffer_child_output *children_result[2];
+    struct buffer_output final_array[BUFFER_SIZE];
+    int final_length = 0;
 
     // for all input files
     for (int i = 0; i < (total_file_number - 1); i++) {
         // open and read one of the input files
         int temp_file = open(temp_file_name[i + 1], O_RDONLY);
         // Check if the input file is successfully opened and read
-        // assert(temp_file != -1);
+        if (temp_file == -1) {
+            return 1;
+        }
 
         // get the size of the temp_file
         struct stat st;
@@ -132,17 +140,31 @@ int main(int argc, char **argv) {
         // Access the data mapped in the address space by using the pointer returned from the mmap() function
         char *pointer_to_temp_file = (char *) mmap(0, size_temp_file, PROT_READ, MAP_SHARED, temp_file, 0);
         // Check if the data is successfully mapped
-        // assert(pointer_to_temp_file != MAP_FAILED);
+        if (pointer_to_temp_file == MAP_FAILED) {
+            return 1;
+        }
 
         // Obtain the 1st part of the input file
-        struct buffer_for_file part_1_temp_file;
-        part_1_temp_file.address = pointer_to_temp_file;
-        part_1_temp_file.part_size = size_temp_file / 2;
+        struct buffer_for_file *part_1_temp_file = NULL;
+
+        // ** Dynamic Memory Allocation **
+        while (part_1_temp_file == NULL) {
+            part_1_temp_file = malloc(sizeof(struct buffer_for_file));
+        }
+
+        part_1_temp_file->address = pointer_to_temp_file;
+        part_1_temp_file->part_size = size_temp_file / 2;
 
         // Obtain the 2nd part of the input file
-        struct buffer_for_file part_2_temp_file;
-        part_2_temp_file.address = pointer_to_temp_file + size_temp_file / 2;
-        part_2_temp_file.part_size = size_temp_file - size_temp_file / 2;
+        struct buffer_for_file *part_2_temp_file = NULL;
+
+        // ** Dynamic Memory Allocation **
+        while (part_2_temp_file == NULL) {
+            part_2_temp_file = malloc(sizeof(struct buffer_for_file));
+        }
+
+        part_2_temp_file->address = pointer_to_temp_file + size_temp_file / 2;
+        part_2_temp_file->part_size = size_temp_file - size_temp_file / 2;
 
 
         // Child threads are the consumers to czip a part of large files divided by the parent thread in advance.
@@ -151,13 +173,13 @@ int main(int argc, char **argv) {
         // Mutex Lock is not needed as they work on 2 different parts of 1 single large file, and
         // they will save their results in separate locations concurrently. No deadlock will happen.
         pthread_t child_t1, child_t2;
-        pthread_create(&child_t1, NULL, czip_child_thread, &part_1_temp_file); //Create child thread t1, start czip
-        pthread_create(&child_t2, NULL, czip_child_thread, &part_2_temp_file); //Create child thread t2, start czip
+        pthread_create(&child_t1, NULL, czip_child_thread, part_1_temp_file); //Create child thread t1, start czip
+        pthread_create(&child_t2, NULL, czip_child_thread, part_2_temp_file); //Create child thread t2, start czip
 
         // 2 child threads save their results in temp_child_pointer_array[] concurrently and respectively
         // join waits for the child threads to finish
-        pthread_join(child_t1, (void **) &(temp_child_pointer_array[0]));
-        pthread_join(child_t2, (void **) &(temp_child_pointer_array[1]));
+        pthread_join(child_t1, (void **) &(children_result[0]));
+        pthread_join(child_t2, (void **) &(children_result[1]));
 
         // Cleanup and unmap
 //      int rc = munmap(pointer_to_temp_file, size_temp_file);
@@ -168,56 +190,77 @@ int main(int argc, char **argv) {
         close(temp_file);
 
         // -------------------------------------------------------------------------------------------------------------
+        struct buffer_child_output parent_result;
+        parent_result.length = 0;
+        int should_combine =
+                children_result[0]->buffer[children_result[0]->length - 1].byte ==
+                children_result[1]->buffer[0].byte;
+        int j, k, new_parent_length;
 
-        //combine results from 2 child threads before reading the next file
-
-        //TODO: 3 problems
-        // 1) unable to continue to save multiple files results into global_temp_output_array for Test 2
-        //      (previous file result will be covered by that of new files)
-        // 2) unexpected differences between my and expected results at the end of the standard output in Test 4
-        // 3) Little differences between my and expected results in Test 5-9
-
-        // Save the results returned from the 1st child thread first
-        for (int n = 0; n < temp_child_pointer_array[0]->buffer_child_array_length; n++) {
-            global_temp_output_array[n] = temp_child_pointer_array[0]->buffer_child_output_array[n];
-            global_temp_output_array_length++;
+        // Combine results from 2 child threads before reading the next file
+        // Check if the last char of 1st result is the same as the first char of 2nd result
+        if (should_combine) {
+            new_parent_length = children_result[0]->length + children_result[1]->length - 1;
+        } else {
+            new_parent_length = children_result[0]->length + children_result[1]->length;
         }
 
-        // Prepare to save the results returned from the 2nd child thread
-        int array_starting_location = temp_child_pointer_array[0]->buffer_child_array_length;
 
-        // If the last character from the 1st child thread result is
-        // the same as the first character from the 2nd child thread result,
-        // combine their count
-        if (global_temp_output_array[array_starting_location - 1].buffer_char ==
-            temp_child_pointer_array[1]->buffer_child_output_array[0].buffer_char) {
-            global_temp_output_array[array_starting_location -
-                                     1].buffer_count += temp_child_pointer_array[1]->buffer_child_output_array[0].buffer_count;
+        //copy first part
+        for (j = 0; j < children_result[0]->length; j++) {
+            parent_result.buffer[j] = children_result[0]->buffer[j];
         }
 
-        // Save the results returned from the 2nd child thread
-        for (int p = 0; p < temp_child_pointer_array[1]->buffer_child_array_length; p++) {
-
-            // check if it is the last element of the array
-            if (p == global_temp_output_array_length - 1) {
-                break;
+        if (should_combine) {
+            parent_result.buffer[children_result[0]->length - 1].count += children_result[1]->buffer[0].count;
+            //copy second part
+            for (j = 1; j < children_result[1]->length; j++) {
+                // copy into empty space after last element
+                parent_result.buffer[parent_result.length + j - 1] = children_result[1]->buffer[j];
             }
+        } else {
+            //copy second part
+            for (j = 0; j < children_result[1]->length; j++) {
+                // copy into empty space after last element
+                parent_result.buffer[parent_result.length + j] = children_result[1]->buffer[j];
+            }
+        }
+        parent_result.length = new_parent_length;
 
-            global_temp_output_array[array_starting_location +
-                                     p] = temp_child_pointer_array[1]->buffer_child_output_array[p + 1];
-            global_temp_output_array_length++;
+        // determine should combine
+        // combine final with parent
+        // copy parent to final (skip first if combined)
+        if (final_length == 0) {
+            should_combine = 0; // False
+        } else {
+            should_combine = final_array[final_length - 1].byte == parent_result.buffer[0].byte;
+        }
+
+        if (should_combine) {
+            final_array[final_length - 1].count += parent_result.buffer[0].count;
+            final_length = final_length + parent_result.length - 1;
+            for (k = 1; k < parent_result.length; k++) {
+                // copy into empty space after last element
+                final_array[final_length + k - 1] = parent_result.buffer[k];
+            }
+        } else {
+            for (k = 0; k < parent_result.length; k++) {
+                // copy into empty space after last element
+                final_array[final_length + k] = parent_result.buffer[k];
+            }
+            final_length += parent_result.length;
         }
     }
 
     // -----------------------------------------------------------------------------------------------------------------
 
     // Finally, print all count and char from the final_output
-    // for all count and char results from the global_temp_output_array
-    for (int m = 0; m < global_temp_output_array_length; m++) {
+    // for all count and char results from the final_array
+    for (int m = 0; m < final_length; m++) {
 
         // write the current character
-        fwrite(&(global_temp_output_array[m].buffer_count), sizeof(int), 1, stdout);
-        fwrite(&(global_temp_output_array[m].buffer_char), sizeof(char), 1, stdout);
+        fwrite(&(final_array[m].count), sizeof(int), 1, stdout);
+        fwrite(&(final_array[m].byte), sizeof(char), 1, stdout);
     }
 
     return 0;
