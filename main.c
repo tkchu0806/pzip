@@ -66,7 +66,8 @@ void *czip_child_thread(void *arg) {
     this_char = temp_part_file->address[0];
 
     // scan for the entire temp_part_file
-    for (int j = 1; j < temp_part_file->part_size; j++) {
+    int j;
+    for (j = 1; j < temp_part_file->part_size; j++) {
         // add up to count the number of the same character
         if (last_char == this_char)
             count++;
@@ -96,6 +97,21 @@ void *czip_child_thread(void *arg) {
     temp_output.byte = last_char;
     local_child_final_output->buffer[array_length++] = temp_output;
     local_child_final_output->length = array_length;
+
+    // To include \n at the end of a file
+    if (this_char == '\n') {
+        local_child_final_output->buffer[array_length].byte = this_char;
+        local_child_final_output->buffer[array_length].count = 1;
+        local_child_final_output->length = ++array_length;
+    }
+
+    // To include last character (this_char) of the file which is different from the previous character (last_char),
+    // but it must not be a '\n' at the end of a file
+    if (last_char != this_char && this_char != '\n') {
+        local_child_final_output->buffer[array_length].byte = this_char;
+        local_child_final_output->buffer[array_length].count = 1;
+        local_child_final_output->length = ++array_length;
+    }
 
     return local_child_final_output;
 }
@@ -205,18 +221,25 @@ int main(int argc, char **argv) {
             new_parent_length = children_result[0]->length + children_result[1]->length;
         }
 
-
         //copy first part
         for (j = 0; j < children_result[0]->length; j++) {
             parent_result.buffer[j] = children_result[0]->buffer[j];
         }
 
+        parent_result.length = j;
+
         if (should_combine) {
             parent_result.buffer[children_result[0]->length - 1].count += children_result[1]->buffer[0].count;
-            //copy second part
-            for (j = 1; j < children_result[1]->length; j++) {
-                // copy into empty space after last element
-                parent_result.buffer[parent_result.length + j - 1] = children_result[1]->buffer[j];
+
+            if (children_result[1]->buffer[1].byte == '\n') {
+                parent_result.buffer[children_result[0]->length].byte = '\n';
+                parent_result.buffer[children_result[0]->length].count = 1;
+            } else {
+                //copy second part
+                for (j = 1; j < children_result[1]->length; j++) {
+                    // copy into empty space after last element
+                    parent_result.buffer[parent_result.length + j - 1] = children_result[1]->buffer[j];
+                }
             }
         } else {
             //copy second part
