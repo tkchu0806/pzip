@@ -66,8 +66,7 @@ void *czip_child_thread(void *arg) {
     this_char = temp_part_file->address[0];
 
     // scan for the entire temp_part_file
-    int j;
-    for (j = 1; j < temp_part_file->part_size; j++) {
+    for (int j = 1; j < temp_part_file->part_size; j++) {
         // add up to count the number of the same character
         if (last_char == this_char)
             count++;
@@ -305,7 +304,7 @@ int main(int argc, char **argv) {
 
     // -----------------------------------------------------------------------------------------------------------------
 
-    // Finally, print all count and char from the final_output
+    // Finally, print all count and char from the final_array
     // for all count and char results from the final_array
     for (int m = 0; m < final_length; m++) {
 
