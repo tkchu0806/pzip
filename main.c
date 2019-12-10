@@ -99,7 +99,7 @@ void *czip_child_thread(void *arg) {
     local_child_final_output->buffer[array_length++] = temp_output;
     local_child_final_output->length = array_length;
 
-    // To include \n at the end of a file
+    // To include '\n' at the end of the file
     if (this_char == '\n') {
         local_child_final_output->buffer[array_length].byte = this_char;
         local_child_final_output->buffer[array_length].count = 1;
@@ -107,7 +107,7 @@ void *czip_child_thread(void *arg) {
     }
 
     // To include last character (this_char) of the file which is different from the previous character (last_char),
-    // but it must not be a '\n' at the end of a file
+    // but it must not be a '\n' at the end of the file
     if (last_char != this_char && this_char != '\n') {
         local_child_final_output->buffer[array_length].byte = this_char;
         local_child_final_output->buffer[array_length].count = 1;
@@ -197,7 +197,7 @@ int main(int argc, char **argv) {
         pthread_create(&child_t1, NULL, czip_child_thread, part_1_temp_file); //Create child thread t1, start czip
         pthread_create(&child_t2, NULL, czip_child_thread, part_2_temp_file); //Create child thread t2, start czip
 
-        // 2 child threads save their results in temp_child_pointer_array[] concurrently and respectively
+        // 2 child threads save their results in children_result[] concurrently and respectively
         // join waits for the child threads to finish
         pthread_join(child_t1, (void **) &(children_result[0]));
         pthread_join(child_t2, (void **) &(children_result[1]));
@@ -210,7 +210,7 @@ int main(int argc, char **argv) {
         // Combine results from 2 child threads before reading the next file
         // Flow of logic:
         // 1) children_result[0] + children_result[1] --> parent_result
-        // 2) final_array + parent_result = final_array
+        // 2) final_array + parent_result --> final_array
 
         struct buffer_child_output parent_result;
         parent_result.length = 0;
@@ -269,7 +269,7 @@ int main(int argc, char **argv) {
             }
         }
 
-        // Update the parent length after copying the both child results
+        // Update the parent length after copying both the child results
         parent_result.length = new_parent_length;
 
         // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
