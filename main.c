@@ -276,10 +276,6 @@ int main(int argc, char **argv) {
 
         // Flow 2) begins
 
-        // determine should combine
-        // combine final with parent
-        // copy parent to final (skip first if combined)
-
         // No need to combine if the final_array is empty
         // Otherwise, need to combine IF the last char of final array is the same as the first char of parent
         if (final_length == 0) {
