@@ -22,11 +22,11 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <assert.h>
 
 // This library is ignored as this header file is not found in MacOS environment.
 // #include <sys/sysinfo.h>
 
+// This constant buffer size is large enough to pass all tests
 #define BUFFER_SIZE 70000
 
 struct buffer_for_file {
@@ -88,6 +88,7 @@ void *czip_child_thread(void *arg) {
         this_char = temp_part_file->address[j];
     }
 
+    // To count the last character which is the same as the previous character at the end of the file.
     if (last_char == this_char) {
         count++;
     }
@@ -168,6 +169,8 @@ int main(int argc, char **argv) {
             part_1_temp_file = malloc(sizeof(struct buffer_for_file));
         }
 
+        // Part 1 starts pointing and scanning later at the beginning of the the file
+        // The file size is the half of the input file
         part_1_temp_file->address = pointer_to_temp_file;
         part_1_temp_file->part_size = size_temp_file / 2;
 
@@ -179,6 +182,8 @@ int main(int argc, char **argv) {
             part_2_temp_file = malloc(sizeof(struct buffer_for_file));
         }
 
+        // Part 2 starts pointing and scanning later at the half of the file
+        // The file size is the remaining half of the input file
         part_2_temp_file->address = pointer_to_temp_file + size_temp_file / 2;
         part_2_temp_file->part_size = size_temp_file - size_temp_file / 2;
 
@@ -197,83 +202,110 @@ int main(int argc, char **argv) {
         pthread_join(child_t1, (void **) &(children_result[0]));
         pthread_join(child_t2, (void **) &(children_result[1]));
 
-        // Cleanup and unmap
-//      int rc = munmap(pointer_to_temp_file, size_temp_file);
-        // Check if it's successfully unmapped to clean up
-//      assert(rc == 0);
-
         // Complete reading the temp_file and close it
         close(temp_file);
 
         // -------------------------------------------------------------------------------------------------------------
+
+        // Combine results from 2 child threads before reading the next file
+        // Flow of logic:
+        // 1) children_result[0] + children_result[1] --> parent_result
+        // 2) final_array + parent_result = final_array
+
         struct buffer_child_output parent_result;
         parent_result.length = 0;
+
+        // Flow 1) begins
+
+        // A boolean indicator to show if the results returned by the 2 child threads should be combined.
+        // => Check if the last char of 1st child result is the same as the first char of 2nd child result
+        // => False = 0; True = 1 (There is no boolean variable in C programming)
+        // e.g. result of thread 1 = 2a3b; result of thread 2 = 3b4c
+        //      then their results should be merged as 2a6b4c in the parent
         int should_combine =
                 children_result[0]->buffer[children_result[0]->length - 1].byte ==
                 children_result[1]->buffer[0].byte;
         int j, k, new_parent_length;
 
-        // Combine results from 2 child threads before reading the next file
-        // Check if the last char of 1st result is the same as the first char of 2nd result
+        // If children results should be combined, the parent length should be shorter by 1
+        // e.g. thread 1 = 2a3b (length = 2); thread 2 = 3b4c (length = 2)
+        //      parent result = 2a6b4c (length = 3)
         if (should_combine) {
             new_parent_length = children_result[0]->length + children_result[1]->length - 1;
         } else {
             new_parent_length = children_result[0]->length + children_result[1]->length;
         }
 
-        //copy first part
+        // Copy first child thread results into the parent
         for (j = 0; j < children_result[0]->length; j++) {
             parent_result.buffer[j] = children_result[0]->buffer[j];
         }
 
+        // Update the parent length after copying the first child result
         parent_result.length = j;
 
+        // If children results should be combined, their count should be added up
+        // e.g. thread 1 = 2a3b; thread 2 = 3b4c
+        //      parent result = 2a6b4c (count of b = 3+3 = 6)
         if (should_combine) {
             parent_result.buffer[children_result[0]->length - 1].count += children_result[1]->buffer[0].count;
 
+            // if the last result from second child thread is '\n', it should be saved to parent as well.
             if (children_result[1]->buffer[1].byte == '\n') {
                 parent_result.buffer[children_result[0]->length].byte = '\n';
                 parent_result.buffer[children_result[0]->length].count = 1;
             } else {
-                //copy second part
+                //copy second child thread results into the parent
                 for (j = 1; j < children_result[1]->length; j++) {
                     // copy into empty space after last element
                     parent_result.buffer[parent_result.length + j - 1] = children_result[1]->buffer[j];
                 }
             }
         } else {
-            //copy second part
+            //copy second child thread results into the parent
             for (j = 0; j < children_result[1]->length; j++) {
                 // copy into empty space after last element
                 parent_result.buffer[parent_result.length + j] = children_result[1]->buffer[j];
             }
         }
+
+        // Update the parent length after copying the both child results
         parent_result.length = new_parent_length;
+
+        // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        // Flow 2) begins
 
         // determine should combine
         // combine final with parent
         // copy parent to final (skip first if combined)
+
+        // No need to combine if the final_array is empty
+        // Otherwise, need to combine IF the last char of final array is the same as the first char of parent
         if (final_length == 0) {
             should_combine = 0; // False
         } else {
             should_combine = final_array[final_length - 1].byte == parent_result.buffer[0].byte;
         }
 
+        // if should combine, add up their count and length (final array length should be shorter by 1)
         if (should_combine) {
             final_array[final_length - 1].count += parent_result.buffer[0].count;
             final_length = final_length + parent_result.length - 1;
+            //copy parent result into the final array
             for (k = 1; k < parent_result.length; k++) {
                 // copy into empty space after last element
                 final_array[final_length + k - 1] = parent_result.buffer[k];
             }
         } else {
+            //copy parent result into the final array
             for (k = 0; k < parent_result.length; k++) {
                 // copy into empty space after last element
                 final_array[final_length + k] = parent_result.buffer[k];
             }
             final_length += parent_result.length;
         }
-    }
+    }  // End of reading and zipping all files
 
     // -----------------------------------------------------------------------------------------------------------------
 
